@@ -1,25 +1,53 @@
 import React, { useState } from "react";
-
+// Add this import at the top of Sharebin.js
+import axios from 'axios';
 const Sharebin = () => {
+
   const [textContent, setTextContent] = useState("");
   const [uploadedFiles, setUploadedFiles] = useState([]);
   const [isDragOver, setIsDragOver] = useState(false);
 
+const uploadToS3 = async (file) => {
+  const { data: url } = await axios.get(`/get-presigned-url?filename=${file.name}`);
+  await axios.put(url, file, {
+    headers: { "Content-Type": file.type },
+  });
+  return url.split("?")[0]; // Return public URL (without query params)
+};
+
+
+
+
   const handleTextChange = (e) => {
     setTextContent(e.target.value);
   };
+const handleFileUpload = async (files) => {
+  const fileArray = Array.from(files);
 
-  const handleFileUpload = (files) => {
-    const fileArray = Array.from(files);
-    const newFiles = fileArray.map((file) => ({
-      id: Date.now() + Math.random(),
-      name: file.name,
-      size: file.size,
-      type: file.type,
-      file: file,
-    }));
-    setUploadedFiles((prev) => [...prev, ...newFiles]);
-  };
+  const uploaded = await Promise.all(
+    fileArray.map(async (file) => {
+      try {
+        const fileUrl = await uploadToS3(file);
+
+        return {
+          id: Date.now() + Math.random(),
+          name: file.name,
+          size: file.size,
+          type: file.type,
+          file: file,
+          url: fileUrl, // Store uploaded S3 URL
+        };
+      } catch (error) {
+        console.error("Upload failed:", file.name, error);
+        return null;
+      }
+    })
+  );
+
+  const validUploads = uploaded.filter((f) => f !== null);
+  setUploadedFiles((prev) => [...prev, ...validUploads]);
+};
+
 
   const handleFileInputChange = (e) => {
     if (e.target.files.length > 0) {

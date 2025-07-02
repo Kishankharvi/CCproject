@@ -5,50 +5,71 @@ import Client from "../componets/Client";
 import toast from "react-hot-toast";
 import Sharebin from "../componets/Sharebin";
 
+import { io } from "socket.io-client";
+
+// Replace with deployed backend URL in production
+// Update this line if your backend is running on a different port or host
+const socket = io("http://52.66.195.105:3001  ", {
+  transports: ["websocket", "polling"], // Add polling as fallback
+  timeout: 20000,
+  forceNew: true
+});
 const Editor = () => {
-  const [clients] = useState([
-    { socketId: 1, username: "Alice", userState: "uploading" },
-    { socketId: 2, username: "Bob", userState: "idle" },
-    { socketId: 1, username: "Alice", userState: "uploading" },
-    { socketId: 2, username: "Bob", userState: "idle" },
-    { socketId: 1, username: "Alice", userState: "uploading" },
-    { socketId: 2, username: "Bob", userState: "idle" },
-    { socketId: 3, username: "Charlie", userState: "editing" },
-    { socketId: 1, username: "Alice", userState: "uploading" },
-    { socketId: 2, username: "Bob", userState: "idle" },
-    { socketId: 1, username: "Alice", userState: "uploading" },
-    { socketId: 2, username: "Bob", userState: "idle" },
-    { socketId: 1, username: "Alice", userState: "uploading" },
-    { socketId: 2, username: "Bob", userState: "idle" },
-    { socketId: 3, username: "Charlie", userState: "editing" },
-  ]);
+  const [clients, setClients] = useState([]);
 
   const { roomId: paramRoomId } = useParams();
-  const location = useLocation(); //  sate object
-    const navigate = useNavigate();
+  const location = useLocation();
+  const navigate = useNavigate();
 
-  useEffect(() => {
-    if (!location.state) {
-      toast.error("Invalid room access. Redirecting...");
-      navigate("/");
-    }
-  }, [location.state, navigate]);
   const roomId = location.state?.roomId;
   const currentUser = location.state?.currentUser;
   const timestamp = location.state?.timestamp;
 
+useEffect(() => {
+  let user = currentUser;
 
+  // If state is not passed, prompt for username
+  if (!location.state || !roomId) {
+    user = prompt("Enter your name to join the room");
+    if (!user) {
+      toast.error("Username is required. Redirecting...");
+      navigate("/");
+      return;
+    }
+  }
+
+  const joinedUser = user || currentUser;
+
+  socket.emit("join", {
+    roomId: paramRoomId,
+    username: joinedUser,
+  });
+
+  socket.on("joined", ({ clients }) => {
+    setClients(clients);
+  });
+
+  socket.on("user-joined", ({ clients }) => {
+    setClients(clients);
+    toast.success("A new user joined the room!");
+  });
+
+  socket.on("user-left", ({ clients }) => {
+    setClients(clients);
+    toast("A user left the room");
+  });
+
+  return () => {
+    socket.disconnect();
+  };
+}, [location.state, navigate, paramRoomId]);
 
   const CopyLink = () => {
     const fullUrl = `${window.location.origin}/editor/${paramRoomId}`;
     navigator.clipboard
       .writeText(fullUrl)
-      .then(() => {
-        toast.success("Copied to clipboard");
-      })
-      .catch((err) => {
-        toast.error("Failed to copy:", err);
-      });
+      .then(() => toast.success("Copied to clipboard"))
+      .catch((err) => toast.error("Failed to copy:", err));
   };
 
   const Sharebtn = () => {
@@ -59,9 +80,7 @@ const Editor = () => {
     };
 
     if (navigator.share) {
-      navigator
-        .share(shareData)
-        .catch((err) => toast.error("Share failed:", err));
+      navigator.share(shareData).catch((err) => toast.error("Share failed:", err));
     } else {
       toast.error("Sharing not supported. Copying link instead.");
       navigator.clipboard.writeText(`${shareData.title}\n ${shareData.text}${shareData.url}`);
@@ -70,6 +89,7 @@ const Editor = () => {
 
   return (
     <div className="min-h-[100vh] bg-primary flex">
+      {/* Sidebar */}
       <div className="w-80 bg-secondary border-r border-primary shadow-themed-lg">
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-primary">
@@ -92,21 +112,19 @@ const Editor = () => {
             {/* Room Info */}
             <div className="bg-tertiary rounded-xl p-4 border border-accent">
               <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-primary">
-                  Room Info
-                </h3>
+                <h3 className="text-sm font-semibold text-primary">Room Info</h3>
                 <button className="p-1 text-secondary hover:text-primary transition-colors duration-200">
                   <i className="fi fi-br-copy text-xs" onClick={CopyLink}></i>
                 </button>
               </div>
-              <div className="space-y-2">
-                <div className="flex items-center text-xs">
+              <div className="space-y-2 text-xs text-secondary">
+                <div className="flex items-center">
                   <i className="fi fi-br-key text-brand mr-2"></i>
-                  <span className="text-secondary">ID: {roomId}</span>
+                  ID: {roomId}
                 </div>
-                <div className="flex items-center text-xs">
+                <div className="flex items-center">
                   <i className="fi fi-br-clock text-brand mr-2"></i>
-                  <span className="text-secondary"> Joined on {timestamp}</span>
+                  Joined on {timestamp}
                 </div>
               </div>
             </div>
@@ -128,7 +146,7 @@ const Editor = () => {
                   <Client
                     key={client.socketId + index}
                     username={client.username}
-                    userState={client.userState}
+                    userState={client.userState || "idle"}
                     initial={client.username?.charAt(0).toUpperCase() || "K"}
                   />
                 ))}
@@ -147,15 +165,10 @@ const Editor = () => {
                   className="bg-tertiary hover:bg-hover border border-primary rounded-lg p-3 text-center transition-all duration-200 hover:shadow-themed-sm"
                 >
                   <i className="fi fi-br-share text-brand text-lg mb-2 block"></i>
-                  <span className="text-xs text-primary font-medium">
-                    Share
-                  </span>
+                  <span className="text-xs text-primary font-medium">Share</span>
                 </button>
-
                 <button
-                  onClick={() => {
-                    navigate(-1);
-                  }}
+                  onClick={() => navigate(-1)}
                   className="bg-tertiary hover:bg-hover border border-primary rounded-lg p-3 text-center transition-all duration-200 hover:shadow-themed-sm"
                 >
                   <i className="fi fi-br-sign-out-alt text-error text-lg mb-2 block"></i>
@@ -167,14 +180,10 @@ const Editor = () => {
         </div>
       </div>
 
-      {/* Main Content Area */}
+      {/* Main Content */}
       <div className="flex-1 bg-primary">
         <div className="p-6">
-          {/* <h3 className="font-medium text-primary mb-2">Main Editor Area</h3>
-          <p className="text-secondary text-sm">
-            Your code editor will go here
-          </p> */}
-          <Sharebin />{" "}
+          <Sharebin />
         </div>
       </div>
     </div>
