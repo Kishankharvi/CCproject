@@ -1,17 +1,48 @@
-import React, { useEffect, useState } from "react";
+// Updated socket configuration with better stability
+const getSocketConnection = () => {
+  const serverUrl = process.env.NODE_ENV === 'production' 
+    ? 'http://13.234.114.45:3001'  // Your production server
+    : 'http://13.234.114.45:3001';     // Local development server
+  
+  return io(serverUrl, {
+    // Transport configuration
+    transports: ["polling", "websocket"], // Try polling first, then websocket
+    upgrade: true,
+    rememberUpgrade: true,
+    
+    // Connection timeouts
+    timeout: 30000,        // Increased timeout
+    pingTimeout: 25000,    // Ping timeout
+    pingInterval: 10000,   // Ping interval
+    
+    // Reconnection settings
+    reconnection: true,
+    reconnectionAttempts: 10,      // More attempts
+    reconnectionDelay: 2000,       // Increased delay
+    reconnectionDelayMax: 10000,   // Max delay
+    randomizationFactor: 0.5,
+    
+    // Connection settings
+    forceNew: false,       // Don't force new connection
+    autoConnect: true,
+    
+    // Additional stability options
+    withCredentials: false,
+    extraHeaders: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json'
+    }
+  });
+};
+
+// Enhanced Editor component with better connection handling
+import React, { useEffect, useState, useRef } from "react";
 import { useLocation, useNavigate, useParams } from "react-router-dom";
 import { io } from "socket.io-client";
 import toast from "react-hot-toast";
 
 import Client from "../componets/Client";
 import Sharebin from "../componets/Sharebin";
-
-// Socket connection (adjust backend URL as needed)
-const socket = io("http://52.66.195.105:3001", {
-  transports: ["websocket", "polling"],
-  timeout: 20000,
-  forceNew: true,
-});
 
 const Editor = () => {
   const { roomId: paramRoomId } = useParams();
@@ -20,6 +51,12 @@ const Editor = () => {
 
   const [clients, setClients] = useState([]);
   const [username, setUsername] = useState("");
+  const [socket, setSocket] = useState(null);
+  const [connectionStatus, setConnectionStatus] = useState("connecting");
+  const [reconnectAttempts, setReconnectAttempts] = useState(0);
+  
+  const socketRef = useRef(null);
+  const reconnectTimeoutRef = useRef(null);
 
   useEffect(() => {
     // Try to retrieve username from location state
@@ -37,53 +74,178 @@ const Editor = () => {
 
     setUsername(nameFromState);
 
-    // Join room
-    socket.emit("join", {
-      roomId: paramRoomId,
-      username: nameFromState,
-    });
+    // Initialize socket connection
+    const initSocket = () => {
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
 
-    // Socket events
-    socket.on("joined", ({ clients }) => {
-      setClients(clients);
-    });
+      const socketConnection = getSocketConnection();
+      socketRef.current = socketConnection;
+      setSocket(socketConnection);
 
-    socket.on("user-joined", ({ clients }) => {
-      setClients(clients);
-      toast.success("A new user joined the room!");
-    });
+      // Connection status handlers
+      socketConnection.on("connect", () => {
+        console.log("Socket connected:", socketConnection.id);
+        setConnectionStatus("connected");
+        setReconnectAttempts(0);
+        toast.success("Connected to server!");
+        
+        // Join room after connection
+        socketConnection.emit("join", {
+          roomId: paramRoomId,
+          username: nameFromState,
+        });
+      });
 
-    socket.on("user-left", ({ clients }) => {
-      setClients(clients);
-      toast("A user left the room");
-    });
+      socketConnection.on("disconnect", (reason) => {
+        console.log("Socket disconnected:", reason);
+        setConnectionStatus("disconnected");
+        
+        if (reason === "io server disconnect") {
+          // Server disconnected, try to reconnect
+          setTimeout(() => {
+            socketConnection.connect();
+          }, 2000);
+        }
+      });
 
+      socketConnection.on("connect_error", (error) => {
+        console.error("Socket connection error:", error);
+        setConnectionStatus("error");
+        setReconnectAttempts(prev => prev + 1);
+        
+        if (reconnectAttempts < 5) {
+          toast.error(`Connection failed. Retrying... (${reconnectAttempts + 1}/5)`);
+        } else {
+          toast.error("Connection failed. Please check your internet connection.");
+        }
+      });
+
+      socketConnection.on("reconnect", (attemptNumber) => {
+        console.log("Socket reconnected after", attemptNumber, "attempts");
+        setConnectionStatus("connected");
+        setReconnectAttempts(0);
+        toast.success("Reconnected to server!");
+      });
+
+      socketConnection.on("reconnect_attempt", (attemptNumber) => {
+        console.log("Reconnection attempt:", attemptNumber);
+        setConnectionStatus("reconnecting");
+        setReconnectAttempts(attemptNumber);
+      });
+
+      socketConnection.on("reconnect_error", (error) => {
+        console.error("Reconnection error:", error);
+        setConnectionStatus("error");
+      });
+
+      socketConnection.on("reconnect_failed", () => {
+        console.error("Reconnection failed");
+        setConnectionStatus("failed");
+        toast.error("Failed to reconnect. Please refresh the page.");
+      });
+
+      // Room event handlers
+      socketConnection.on("joined", ({ clients }) => {
+        setClients(clients);
+        console.log("Successfully joined room with", clients.length, "clients");
+      });
+
+      socketConnection.on("user-joined", ({ clients, username: joinedUsername }) => {
+        setClients(clients);
+        toast.success(`${joinedUsername} joined the room!`);
+      });
+
+      socketConnection.on("user-left", ({ clients, username: leftUsername }) => {
+        setClients(clients);
+        toast(`${leftUsername} left the room`);
+      });
+
+      socketConnection.on("error", ({ message }) => {
+        toast.error(message || "An error occurred");
+      });
+    };
+
+    initSocket();
+
+    // Cleanup function
     return () => {
-      socket.disconnect();
+      if (reconnectTimeoutRef.current) {
+        clearTimeout(reconnectTimeoutRef.current);
+      }
+      if (socketRef.current) {
+        socketRef.current.disconnect();
+      }
     };
   }, [location.state, navigate, paramRoomId]);
+
+  const getStatusColor = () => {
+    switch (connectionStatus) {
+      case "connected": return "text-green-500";
+      case "connecting": 
+      case "reconnecting": return "text-yellow-500";
+      case "disconnected":
+      case "error":
+      case "failed": return "text-red-500";
+      default: return "text-gray-500";
+    }
+  };
+
+  const getStatusText = () => {
+    switch (connectionStatus) {
+      case "connected": return "Connected";
+      case "connecting": return "Connecting...";
+      case "reconnecting": return `Reconnecting... (${reconnectAttempts})`;
+      case "disconnected": return "Disconnected";
+      case "error": return "Connection Error";
+      case "failed": return "Connection Failed";
+      default: return "Unknown";
+    }
+  };
+
+  const handleRetryConnection = () => {
+    if (socketRef.current) {
+      setConnectionStatus("connecting");
+      socketRef.current.connect();
+    }
+  };
 
   const CopyLink = () => {
     const fullUrl = `${window.location.origin}/editor/${paramRoomId}`;
     navigator.clipboard
       .writeText(fullUrl)
-      .then(() => toast.success("Copied to clipboard"))
-      .catch((err) => toast.error("Failed to copy:", err));
+      .then(() => toast.success("Room link copied to clipboard!"))
+      .catch((err) => {
+        console.error("Failed to copy:", err);
+        toast.error("Failed to copy link");
+      });
   };
 
   const Sharebtn = () => {
     const shareData = {
-      title: "Join my session",
-      text: "Join me in this room:",
+      title: "Join my coding session",
+      text: "Join me in this collaborative coding room:",
       url: window.location.href,
     };
 
     if (navigator.share) {
-      navigator.share(shareData).catch((err) => toast.error("Share failed:", err));
+      navigator.share(shareData).catch((err) => {
+        console.error("Share failed:", err);
+        toast.error("Share failed. Copying link instead.");
+        CopyLink();
+      });
     } else {
       toast.error("Sharing not supported. Copying link instead.");
-      navigator.clipboard.writeText(`${shareData.title}\n${shareData.text} ${shareData.url}`);
+      CopyLink();
     }
+  };
+
+  const handleLeaveRoom = () => {
+    if (socketRef.current) {
+      socketRef.current.disconnect();
+    }
+    navigate("/");
   };
 
   return (
@@ -119,6 +281,20 @@ const Editor = () => {
               <div className="flex items-center">
                 <i className="fi fi-br-clock text-brand mr-2" />
                 Joined on {new Date().toLocaleString()}
+              </div>
+              <div className="flex items-center justify-between">
+                <div className="flex items-center">
+                  <i className="fi fi-br-signal text-brand mr-2" />
+                  Status: <span className={`ml-1 font-medium ${getStatusColor()}`}>{getStatusText()}</span>
+                </div>
+                {(connectionStatus === "error" || connectionStatus === "failed") && (
+                  <button 
+                    onClick={handleRetryConnection}
+                    className="text-xs bg-brand text-white px-2 py-1 rounded hover:bg-brand-dark"
+                  >
+                    Retry
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -160,7 +336,7 @@ const Editor = () => {
                 <span className="text-xs text-primary font-medium">Share</span>
               </button>
               <button
-                onClick={() => navigate("/")}
+                onClick={handleLeaveRoom}
                 className="bg-tertiary hover:bg-hover border border-primary rounded-lg p-3 text-center transition-all duration-200"
               >
                 <i className="fi fi-br-sign-out-alt text-error text-lg mb-2 block" />
@@ -174,7 +350,7 @@ const Editor = () => {
       {/* Main Content */}
       <div className="flex-1 bg-primary">
         <div className="p-6">
-          <Sharebin />
+          <Sharebin socket={socket} roomId={paramRoomId} username={username} />
         </div>
       </div>
     </div>
