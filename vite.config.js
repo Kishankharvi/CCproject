@@ -8,7 +8,7 @@ export default defineConfig({
    server: {
     proxy: {
       '/get-presigned-url': {
-        target: 'http://13.234.114.45:3001', // Your backend port
+        target: 'https://13.234.114.45:3001', // Your backend port
         changeOrigin: true
       }
     }
