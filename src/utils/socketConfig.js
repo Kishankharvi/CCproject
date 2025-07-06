@@ -4,7 +4,7 @@ export const getSocketConnection = () => {
   const isProduction = import.meta.env.MODE === "production";
 
   const serverUrl = isProduction
-    ? import.meta.env.VITE_SERVER_URL || "http://13.234.114.45:3001"
+    ? import.meta.env.VITE_SERVER_URL || "https://13.234.114.45:3001"
     : import.meta.env.VITE_SERVER_URL || "http://localhost:3001";
 
   return io(serverUrl, {
