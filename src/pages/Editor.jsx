@@ -15,7 +15,7 @@ const getSocketConnection = () => {
     pingTimeout: 25000,    // Ping timeout
     pingInterval: 10000,   // Ping interval
     
-    // Reconnection settings
+    // Reconnection settings  
     reconnection: true,
     reconnectionAttempts: 10,      // More attempts
     reconnectionDelay: 2000,       // Increased delay
