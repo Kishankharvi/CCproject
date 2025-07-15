@@ -4,8 +4,8 @@ export const getSocketConnection = () => {
   const isProduction = import.meta.env.MODE === "production";
 
   const serverUrl = isProduction
-    ? import.meta.env.VITE_SERVER_URL || "https://65.0.203.116:3001"
-    : import.meta.env.VITE_SERVER_URL || "http://65.0.203.116:3001";
+    ? import.meta.env.VITE_SERVER_URL || "https://13.127.253.123:3001"
+    : import.meta.env.VITE_SERVER_URL || "http://13.127.253.123:3001";
   console.log("Connecting to Socket.IO server at:", serverUrl);
   return io(serverUrl, {
     transports: ["websocket", "polling"],

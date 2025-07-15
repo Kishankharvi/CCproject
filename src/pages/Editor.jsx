@@ -1,8 +1,8 @@
 // Updated socket configuration with better stability
 const getSocketConnection = () => {
   const serverUrl = process.env.NODE_ENV === 'production' 
-    ? 'https://65.0.203.116:3001'  // Your production server
-    : 'http://65.0.203.116:3001';     // Local development server
+    ? 'http://13.127.253.123:3001'  // Your production server
+    : 'http://13.127.253.123:3001';     // Local development server
   
   return io(serverUrl, {
     // Transport configuration
