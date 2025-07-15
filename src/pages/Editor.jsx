@@ -1,8 +1,8 @@
 // Updated socket configuration with better stability
 const getSocketConnection = () => {
   const serverUrl = process.env.NODE_ENV === 'production' 
-    ? 'http://13.234.114.45:3001'  // Your production server
-    : 'http://13.234.114.45:3001';     // Local development server
+    ? 'http://65.0.203.116:3001'  // Your production server
+    : 'http://65.0.203.116:3001';     // Local development server
   
   return io(serverUrl, {
     // Transport configuration
@@ -16,6 +16,8 @@ const getSocketConnection = () => {
     pingInterval: 10000,   // Ping interval
     
     // Reconnection settings  
+
+    
     reconnection: true,
     reconnectionAttempts: 10,      // More attempts
     reconnectionDelay: 2000,       // Increased delay

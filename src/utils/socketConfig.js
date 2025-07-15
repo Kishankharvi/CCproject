@@ -4,14 +4,14 @@ export const getSocketConnection = () => {
   const isProduction = import.meta.env.MODE === "production";
 
   const serverUrl = isProduction
-    ? import.meta.env.VITE_SERVER_URL || "https://13.234.114.45:3001"
-    : import.meta.env.VITE_SERVER_URL || "http://localhost:3001";
-
+    ? import.meta.env.VITE_SERVER_URL || "https://65.0.203.116:3001"
+    : import.meta.env.VITE_SERVER_URL || "http://65.0.203.116:3001";
+  console.log("Connecting to Socket.IO server at:", serverUrl);
   return io(serverUrl, {
     transports: ["websocket", "polling"],
     upgrade: true,
     rememberUpgrade: true,
-    timeout: 20000,
+    timeout: 20000, 
     pingTimeout: 60000,
     pingInterval: 25000,
     reconnection: true,
